@@ -9,7 +9,6 @@ import win32com.client
 import datetime
 import pytz
 import config as cfg
-import dateutil
 
 
 def parse_workbook(path_to_file, sheet_name):
@@ -36,23 +35,20 @@ def parse_workbook(path_to_file, sheet_name):
     return all_dates
 
 
-def get_existing_appointments(outlook_object):
+def remove_existing_appointments(outlook_object):
     """
-    Function to read through all existing Outlook appts and filter
-    out computing bleep appts
+    Function to read through all existing Outlook appts and remove
+    existing computing bleep appts to avoid dupes and allow for
+    changes to the schedule
     :param outlook_object:
-    :return: Returns a list of all existing Computing bleep appts
-             to ensure that no duplicates are created
+    :return: None
     """
     namespace = outlook_object.GetNamespace("MAPI")
     outlook_appointments = namespace.GetDefaultFolder(9).Items
-    existing_appt_list = []
     for appt in outlook_appointments:
-        data_dict = {'Start': [], 'Subject': []}
-        data_dict['Start'] = dateutil.parser.parse(str(appt.Start)).replace(tzinfo=pytz.UTC)
-        data_dict['Subject'] = appt.Subject
-        existing_appt_list.append(data_dict)
-    return [element for element in existing_appt_list if 'Computing bleep' in element['Subject']]
+        if 'Computing bleep' in appt.Subject:
+            appt.Delete()
+    return None
 
 
 def convert_dates_to_appointments(input_data, user_initials):
@@ -64,7 +60,6 @@ def convert_dates_to_appointments(input_data, user_initials):
     :return: None
     """
     count = 0
-    existing_appts = get_existing_appointments(outlook)
     for entry in input_data:
         try:
             if user_initials in entry['AM']:                   # if your initials are present in AM
@@ -73,24 +68,22 @@ def convert_dates_to_appointments(input_data, user_initials):
                         appointment = outlook.CreateItem(1)
                         appointment.Start = entry['Date'].replace(tzinfo=pytz.UTC) +\
                                             datetime.timedelta(hours=8)         # Starts at 8 AM
-                        if not [item for item in existing_appts if item['Start'] == appointment.Start]:
-                            appointment.Subject = 'Computing bleep AM'
-                            appointment.Duration = 5 * 60                      # Lasts 5 hours
-                            appointment.ReminderSet = True
-                            appointment.ReminderMinutesBeforeStart = 15
-                            appointment.Save()
-                            count += 1
+                        appointment.Subject = 'Computing bleep AM'
+                        appointment.Duration = 5 * 60                      # Lasts 5 hours
+                        appointment.ReminderSet = True
+                        appointment.ReminderMinutesBeforeStart = 15
+                        appointment.Save()
+                        count += 1
                     if user_initials in entry['PM']:
                         appointment = outlook.CreateItem(1)
                         appointment.Start = entry['Date'].replace(tzinfo=pytz.UTC) + \
                                             datetime.timedelta(hours=13)      # Starts at 1PM
-                        if not [item for item in existing_appts if item['Start'] == appointment.Start]:
-                            appointment.Subject = 'Computing bleep PM'
-                            appointment.Duration = 5 * 60
-                            appointment.ReminderSet = True
-                            appointment.ReminderMinutesBeforeStart = 15
-                            appointment.Save()
-                            count += 1
+                        appointment.Subject = 'Computing bleep PM'
+                        appointment.Duration = 5 * 60
+                        appointment.ReminderSet = True
+                        appointment.ReminderMinutesBeforeStart = 15
+                        appointment.Save()
+                        count += 1
         except TypeError:
             pass
     print("Added {0} calendar entries".format(count))
@@ -98,6 +91,8 @@ def convert_dates_to_appointments(input_data, user_initials):
 
 if __name__ == '__main__':
     outlook = win32com.client.Dispatch("Outlook.Application")
+    remove_existing_appointments(outlook)
+    remove_existing_appointments(outlook)   #has to run twice because of the magic
     file_path = cfg.file_path
     sheet_label = cfg.sheet_label
     excel_data = parse_workbook(file_path, sheet_label)
